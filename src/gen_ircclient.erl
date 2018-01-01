@@ -157,6 +157,19 @@ trigger( 'Outbox', connect, NetState ) ->
 
   drop;
 
+trigger( 'Outbox', join, NetState ) ->
+
+  #irc_state{ socket  = Socket,
+              channel = Channel } = gen_pnet:get_usr_info( NetState ),
+
+  ok = gen_tcp:send( Socket, io_lib:format( "JOIN ~s\r\n", [Channel] ) ),
+
+  error_logger:info_report( [{status, join_sent}, {channel, Channel}] ),
+
+  drop;
+
+
+
 trigger( _Place, _Token, _NetState ) -> pass.
 
 
@@ -256,6 +269,7 @@ fire( ack_connect, _, _ ) ->
 
   error_logger:info_report( [{status, ack_connect}] ),
 
-  {produce, #{ 'State' => [join] }}.
+  {produce, #{ 'State' => [join] }};
 
-
+fire( request_join, _, _ ) ->
+  {produce, #{ 'State' => [await_join], 'Outbox' => [join] }}.
