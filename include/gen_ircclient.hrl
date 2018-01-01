@@ -1,0 +1,1 @@
+-record( msg, {prefix, command, arg_lst = []} ).
