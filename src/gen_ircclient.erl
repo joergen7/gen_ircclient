@@ -5,7 +5,19 @@
 %% Exports
 %%====================================================================
 
--export( [] ).
+-export( [start_link/6, start_link/7] ).
+
+-export( [code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
+          terminate/2, trigger/3] ).
+
+-export( [place_lst/0, trsn_lst/0, init_marking/2, preset/1, is_enabled/3,
+          fire/3] ).
+
+%%====================================================================
+%% Exports
+%%====================================================================
+
+-include( "gen_ircclient.hrl" ).
 
 %%====================================================================
 %% Callback definitions
@@ -22,15 +34,29 @@
 %%====================================================================
 
 
--spec start_link() -> gen_pnet:start_link_result().
+-spec start_link( Server, Port, NickName, UserName, RealName, Channel ) -> gen_pnet:start_link_result()
+when Server   :: string(),
+     Port     :: pos_integer(),
+     NickName :: string(),
+     UserName :: string(),
+     RealName :: string(),
+     Channel  :: string().
 
-start_link() -> gen_pnet:start_link( ?MODULE, [], [] ).
+start_link( Server, Port, NickName, UserName, RealName, Channel ) ->
+  gen_pnet:start_link( ?MODULE, {Server, Port, NickName, UserName, RealName, Channel}, [] ).
 
 
--spec start_link( ServerName ) -> gen_pnet:start_link_result()
-when ServerName :: gen_pnet:server_name().
+-spec start_link( ServerName, Server, Port, NickName, UserName, RealName, Channel ) -> gen_pnet:start_link_result()
+when ServerName :: gen_pnet:server_name(),
+     Server     :: string(),
+     Port       :: pos_integer(),
+     NickName   :: string(),
+     UserName   :: string(),
+     RealName   :: string(),
+     Channel    :: string().
 
-start_link( ServerName ) -> gen_pnet:start_link( ServerName, ?MODULE, [], [] ).
+start_link( ServerName, Server, Port, NickName, UserName, RealName, Channel ) ->
+  gen_pnet:start_link( ServerName, ?MODULE, {Server, Port, NickName, UserName, RealName, Channel}, [] ).
 
 
 %%====================================================================
@@ -68,7 +94,7 @@ handle_cast( _Request, _NetState ) -> noreply.
 
 handle_info( {tcp_closed, Socket}, NetState ) ->
   #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
-  stop( tcp_closed );
+  {stop, tcp_closed};
 
 handle_info( {tcp, Socket, [$P, $I, $N, $G|X]}, NetState ) ->
   #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
@@ -105,14 +131,17 @@ terminate( _Reason, _NetState ) -> ok.
 -spec trigger( Place :: atom(), Token :: _, NetState :: _ ) ->
             pass | drop.
 
-trigger( 'Connect', _Token, #irc_state{ nick_name = NickName,
-                                        user_name = UserName,
-                                        real_name = RealName } ) ->
+trigger( 'Outbox', connect, NetState ) ->
+
+  #irc_state{ socket    = Socket,
+              nick_name = NickName,
+              user_name = UserName,
+              real_name = RealName } = gen_pnet:get_usr_info( NetState ),
 
   % send registration info
   ok = gen_tcp:send( Socket,
                      io_lib:format( "NICK ~s\r\nUSER ~s * 8 :~s\r\n",
-                     [Nickname, Username, Realname] ) ),
+                     [NickName, UserName, RealName] ) ),
 
   drop;
 
@@ -150,7 +179,7 @@ preset( ack_connect )     -> ['State', 'Inbox'].
 -spec is_enabled( Trsn :: atom(), Mode :: #{ atom() => [_]}, UsrInfo :: _ ) ->
         boolean().
 
-is_enabled( recv, #{ 'Data' := [S] } ) ->
+is_enabled( recv, #{ 'Data' := [S] }, _ ) ->
   case string:find( S, "\r\n" ) of
     nomatch -> false;
     _       -> true
@@ -160,11 +189,11 @@ is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
 
 is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command := "376" }] }, _ ) ->
+                            'Inbox' := [#msg{ command = "376" }] }, _ ) ->
   true;
 
 is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command := "422" }] }, _ ) ->
+                            'Inbox' := [#msg{ command = "422" }] }, _ ) ->
   true;
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
