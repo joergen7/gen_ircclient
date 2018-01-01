@@ -207,7 +207,7 @@ fire( recv, #{ 'Data' := [S] }, _ ) ->
   Msg = gen_ircclient_parse:parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
-fire( connect, _, _ ) ->
+fire( request_connect, _, _ ) ->
   {produce, #{ 'State' => [await_connect], 'Outbox' => [connect] }};
 
 fire( ack_connect, _, _ ) ->
