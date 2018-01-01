@@ -27,6 +27,6 @@ parse_msg( arg_lst, [$:|S], Msg = #msg{ arg_lst = ArgLst } ) ->
 
 parse_msg( arg_lst, S, Msg = #msg{ arg_lst = ArgLst } ) ->
   case string:split( S, " " ) of
-    [LastArg]   -> Msg#msg{ arg_list = ArgLst++[LastArg] };
+    [LastArg]   -> Msg#msg{ arg_lst = ArgLst++[LastArg] };
     [Arg, Rest] -> parse_msg( arg_lst, Rest, Msg#msg{ arg_lst = ArgLst++[Arg]} )
   end.
