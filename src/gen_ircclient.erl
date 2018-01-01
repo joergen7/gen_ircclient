@@ -231,7 +231,9 @@ is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "MODE" }] }, _ )   -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] }, _ ) ->
+
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] },
+                      #irc_state{ nick_name = NickName } ) ->
   not lists:prefix( NickName, Prefix );
 
 is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
