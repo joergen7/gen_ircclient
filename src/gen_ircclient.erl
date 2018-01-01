@@ -209,11 +209,7 @@ is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
 
 is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command = "376" }] }, _ ) ->
-  true;
-
-is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command = "422" }] }, _ ) ->
+                            'Inbox' := [#msg{ command = "MODE" }] }, _ ) ->
   true;
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
