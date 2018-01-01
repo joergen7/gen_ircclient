@@ -140,8 +140,8 @@ trigger( 'Outbox', connect, NetState ) ->
               user_name = UserName,
               real_name = RealName } = gen_pnet:get_usr_info( NetState ),
 
-  HostName = "<gen_host>",
-  ServerName = "<gen_server>",
+  HostName = "*",
+  ServerName = "8",
 
   % send registration info
   ok = gen_tcp:send( Socket,
@@ -151,8 +151,6 @@ trigger( 'Outbox', connect, NetState ) ->
   error_logger:info_report( [{status, register_user},
                              {nick_name, NickName},
                              {user_name, UserName},
-                             {host_name, HostName},
-                             {server_name, ServerName},
                              {real_name, RealName}] ),
 
   drop;
@@ -233,6 +231,8 @@ is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "MODE" }] }, _ )   -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] }, _ ) ->
+  not lists:prefix( NickName, Prefix );
 
 is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
@@ -249,8 +249,9 @@ is_enabled( request_join, #{ 'State' := [join] }, _ ) ->
   true;
 
 is_enabled( ack_join, #{ 'State' := [await_join],
-                         'Inbox' := [#msg{ command = "JOIN" }] }, _ ) ->
-  true;
+                         'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] },
+                      #irc_state{ nick_name = NickName } ) ->
+  lists:prefix( NickName, Prefix );
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
 
