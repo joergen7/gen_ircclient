@@ -116,7 +116,7 @@ init( {Server, Port, NickName, UserName, RealName, Channel} ) ->
   % create socket
   {ok, Socket} = gen_tcp:connect( Server, Port, [list, {active, true}] ),
 
-  error_logger:info_report( [{status, socket_ok}, {server, Server}, {port, Port}] ),
+  error_logger:info_report( [{status, create_socket}, {server, Server}, {port, Port}] ),
 
   #irc_state{ socket    = Socket,
               nick_name = NickName,
@@ -148,7 +148,7 @@ trigger( 'Outbox', connect, NetState ) ->
                      io_lib:format( "NICK ~s\r\nUSER ~s ~s ~s :~s\r\n",
                      [NickName, UserName, HostName, ServerName, RealName] ) ),
 
-  error_logger:info_report( [{status, user_sent},
+  error_logger:info_report( [{status, register_user},
                              {nick_name, NickName},
                              {user_name, UserName},
                              {host_name, HostName},
@@ -164,7 +164,7 @@ trigger( 'Outbox', join, NetState ) ->
 
   ok = gen_tcp:send( Socket, io_lib:format( "JOIN ~s\r\n", [Channel] ) ),
 
-  error_logger:info_report( [{status, join_sent}, {channel, Channel}] ),
+  error_logger:info_report( [{status, join_channel}, {channel, Channel}] ),
 
   drop;
 
@@ -225,6 +225,10 @@ is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "254" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "255" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "265" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "266" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "332" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "333" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "353" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "366" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "MODE" }] }, _ )   -> true;
@@ -245,7 +249,7 @@ is_enabled( request_join, #{ 'State' := [join] }, _ ) ->
   true;
 
 is_enabled( ack_join, #{ 'State' := [await_join],
-                         'Inbox' := [#msg{ command = "???" }] }, _ ) ->
+                         'Inbox' := [#msg{ command = "JOIN" }] }, _ ) ->
   true;
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
@@ -272,4 +276,8 @@ fire( ack_connect, _, _ ) ->
   {produce, #{ 'State' => [join] }};
 
 fire( request_join, _, _ ) ->
-  {produce, #{ 'State' => [await_join], 'Outbox' => [join] }}.
+  {produce, #{ 'State' => [await_join], 'Outbox' => [join] }};
+
+fire( ack_join, _, _ ) ->
+  error_logger:info_report( [{status, ack_join}] ),
+  {produce, #{ 'State' => [ready] }}.
