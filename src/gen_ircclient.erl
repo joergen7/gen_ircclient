@@ -153,7 +153,7 @@ trigger( 'Outbox', connect, NetState ) ->
                              {user_name, UserName},
                              {host_name, HostName},
                              {server_name, ServerName},
-                             {real_name, RealName}])
+                             {real_name, RealName}] ),
 
   drop;
 
@@ -259,7 +259,7 @@ fire( recv, #{ 'Data' := [S] }, _ ) ->
   Msg = gen_ircclient_parse:parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
-fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
+fire( drop_msg, _, _ ) ->
   {produce, #{}};
 
 fire( request_connect, _, _ ) ->
