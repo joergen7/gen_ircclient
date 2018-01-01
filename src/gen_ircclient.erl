@@ -186,6 +186,9 @@ is_enabled( recv, #{ 'Data' := [S] }, _ ) ->
     _       -> true
   end;
 
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) ->
+  true;
+
 is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
 
@@ -207,6 +210,10 @@ fire( recv, #{ 'Data' := [S] }, _ ) ->
   [Prefix, Suffix] = string:split( S, "\r\n" ),
   Msg = gen_ircclient_parse:parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
+
+fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
+  io:format( "~p~n", [Msg] ),
+  {produce, #{}};
 
 fire( request_connect, _, _ ) ->
   {produce, #{ 'State' => [await_connect], 'Outbox' => [connect] }};
