@@ -263,16 +263,15 @@ fire( recv, #{ 'Data' := [S] }, _ ) ->
   Msg = gen_ircclient_parse:parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
-fire( drop_msg, _, _ ) ->
+fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
+  io:format( "~p~n", [Msg] ),
   {produce, #{}};
 
 fire( request_connect, _, _ ) ->
   {produce, #{ 'State' => [await_connect], 'Outbox' => [connect] }};
 
 fire( ack_connect, _, _ ) ->
-
   error_logger:info_report( [{status, ack_connect}] ),
-
   {produce, #{ 'State' => [join] }};
 
 fire( request_join, _, _ ) ->
