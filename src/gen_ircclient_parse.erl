@@ -1,15 +1,12 @@
 -module( gen_ircclient_parse ).
 
--export( [parse_string/1] ).
+-export( [parse_msg/1] ).
 
 -include( "gen_ircclient.hrl" ).
 
-parse_string( [] ) -> [];
 
-parse_string( S ) ->
-  [H, T] = string:split( S, "\r\n" ),
-  [parse_msg( prefix, H, #msg{} )|parse_string( T )].
-
+parse_msg( S ) ->
+  parse_msg( prefix, S, #msg{} ).
 
 parse_msg( prefix, [$:|S], Msg ) ->
   [Prefix, Rest] = string:split( S, " " ),
