@@ -189,7 +189,6 @@ is_enabled( recv, #{ 'Data' := [S] }, _ ) ->
     _       -> true
   end;
 
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "001" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "002" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "003" }] }, _ )    -> true;
@@ -198,12 +197,15 @@ is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "005" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "250" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "251" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "252" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "253" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "254" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "255" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "265" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "266" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "MODE" }] }, _ )   -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) -> true;
 
 is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
