@@ -116,6 +116,8 @@ init( {Server, Port, NickName, UserName, RealName, Channel} ) ->
   % create socket
   {ok, Socket} = gen_tcp:connect( Server, Port, [list, {active, true}] ),
 
+  error_logger:info_report( [{status, socket_ok}, {server, Server}, {port, Port}] ),
+
   #irc_state{ socket    = Socket,
               nick_name = NickName,
               user_name = UserName,
@@ -146,6 +148,13 @@ trigger( 'Outbox', connect, NetState ) ->
                      io_lib:format( "NICK ~s\r\nUSER ~s ~s ~s :~s\r\n",
                      [NickName, UserName, HostName, ServerName, RealName] ) ),
 
+  error_logger:info_report( [{status, user_sent},
+                             {nick_name, NickName},
+                             {user_name, UserName},
+                             {host_name, HostName},
+                             {server_name, ServerName},
+                             {real_name, RealName}])
+
   drop;
 
 trigger( _Place, _Token, _NetState ) -> pass.
@@ -162,7 +171,8 @@ place_lst() -> ['Data', 'Inbox', 'Outbox', 'State'].
 
 -spec trsn_lst() -> [atom()].
 
-trsn_lst() -> [recv, drop_msg, request_connect, ack_connect].
+trsn_lst() -> [recv, drop_msg,
+               request_connect, ack_connect, request_join, ack_join].
 
 
 -spec init_marking( Place :: atom(), UsrInfo :: _ ) -> [_].
@@ -176,8 +186,8 @@ init_marking( _Place, _UsrInfo ) -> [].
 
 preset( recv )            -> ['Data'];
 preset( drop_msg )        -> ['Inbox'];
-preset( request_connect ) -> ['State'];
-preset( ack_connect )     -> ['State', 'Inbox'].
+preset( request_connect ) -> ['State']; preset( ack_connect ) -> ['State', 'Inbox'];
+preset( request_join )    -> ['State']; preset( ack_join )    -> ['State', 'Inbox'].
 
 
 -spec is_enabled( Trsn :: atom(), Mode :: #{ atom() => [_]}, UsrInfo :: _ ) ->
@@ -218,6 +228,13 @@ is_enabled( ack_connect, #{ 'State' := [await_connect],
                             'Inbox' := [#msg{ command = "422" }] }, _ ) ->
   true;
 
+is_enabled( request_join, #{ 'State' := [join] }, _ ) ->
+  true;
+
+is_enabled( ack_join, #{ 'State' := [await_join],
+                         'Inbox' := [#msg{ command = "???" }] }, _ ) ->
+  true;
+
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
 
 
@@ -230,13 +247,15 @@ fire( recv, #{ 'Data' := [S] }, _ ) ->
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
 fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
-  io:format( "~p~n", [Msg] ),
   {produce, #{}};
 
 fire( request_connect, _, _ ) ->
   {produce, #{ 'State' => [await_connect], 'Outbox' => [connect] }};
 
 fire( ack_connect, _, _ ) ->
+
+  error_logger:info_report( [{status, ack_connect}] ),
+
   {produce, #{ 'State' => [join] }}.
 
 
