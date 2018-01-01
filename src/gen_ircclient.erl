@@ -204,7 +204,7 @@ is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
             abort | {produce, #{ atom() => [_] }}.
 
 fire( recv, #{ 'Data' := [S] }, _ ) ->
-  [Prefix, Suffix] = string:split( S ),
+  [Prefix, Suffix] = string:split( S, "\r\n" ),
   Msg = gen_ircclient_parse:parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
