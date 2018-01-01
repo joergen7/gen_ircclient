@@ -204,7 +204,6 @@ is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "265" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "266" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
 is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "001" }] }, _ )    -> true;
 
 is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
   true;
