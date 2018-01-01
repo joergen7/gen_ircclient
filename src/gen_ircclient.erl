@@ -164,6 +164,7 @@ trsn_lst() -> [recv, drop_msg, request_connect, ack_connect].
 
 -spec init_marking( Place :: atom(), UsrInfo :: _ ) -> [_].
 
+init_marking( 'Data', _ )        -> [""];
 init_marking( 'State', _ )       -> [connect];
 init_marking( _Place, _UsrInfo ) -> [].
 
