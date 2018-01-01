@@ -103,7 +103,7 @@ handle_info( {tcp, Socket, [$P, $I, $N, $G|X]}, NetState ) ->
 
 handle_info( {tcp, Socket, Data}, NetState ) ->
   #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
-  [LineAcc] = gen_pnet:get_ls( 'Data' ),
+  [LineAcc] = gen_pnet:get_ls( 'Data', NetState ),
   {noreply, #{ 'Data' => [LineAcc] }, #{ 'Data' => [LineAcc++Data] }};
 
 handle_info( _Request, _NetState ) -> noreply.
