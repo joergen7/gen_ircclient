@@ -1,1 +1,2 @@
--record( msg, {prefix, command, arg_lst = []} ).
+-record( irc_msg, {prefix, command, arg_lst = []} ).
+-record( conn_info, {server, port, nick_name, user_name, real_name} ).

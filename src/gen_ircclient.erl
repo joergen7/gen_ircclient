@@ -5,7 +5,7 @@
 %% Exports
 %%====================================================================
 
--export( [start_link/6, start_link/7] ).
+-export( [start_link/4, start_link/5, get_nick_name/1] ).
 
 -export( [code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
           terminate/2, trigger/3] ).
@@ -23,40 +23,49 @@
 %% Callback definitions
 %%====================================================================
 
+-callback init( Arg :: _ ) -> State :: _.
+
+-callback handle_privmsg( Mode :: private | public, Sender :: string(), Content :: string(), State :: _ ) ->
+              {noreply, NewState :: _}                    % keep qiet
+            | {reply, Reply :: string(), NewState :: _}   % immediately reply with Reply
+            | {spawn, F :: fun( () -> string() ), NewState :: _}. % spawn long-running process F which returns the reply string
+
+-callback handle_join( User :: string(), State :: _ ) -> _.
+
+-callback handle_part( User :: string(), State :: _ ) -> _.
+
 %%====================================================================
 %% Record definitions
 %%====================================================================
 
--record( irc_state, {socket, nick_name, user_name, real_name, channel} ).
+-record( irc_state, {socket, nick_name, user_name, real_name, channel,
+                     usr_mod, usr_arg} ).
 
 %%====================================================================
 %% API functions
 %%====================================================================
 
 
--spec start_link( Server, Port, NickName, UserName, RealName, Channel ) -> gen_pnet:start_link_result()
-when Server   :: string(),
-     Port     :: pos_integer(),
-     NickName :: string(),
-     UserName :: string(),
-     RealName :: string(),
-     Channel  :: string().
+-spec start_link( ConnInfo, Channel, UsrMod, UsrArg ) ->
+        gen_pnet:start_link_result()
+when ConnInfo :: #conn_info{},
+     Channel  :: string(),
+     UsrMod   :: atom(),
+     UsrArg   :: _.
 
-start_link( Server, Port, NickName, UserName, RealName, Channel ) ->
-  gen_pnet:start_link( ?MODULE, {Server, Port, NickName, UserName, RealName, Channel}, [] ).
+start_link( ConnInfo, Channel, UsrMod, UsrArg ) ->
+  gen_pnet:start_link( ?MODULE, {ConnInfo, Channel, UsrMod, UsrArg}, [] ).
 
 
--spec start_link( ServerName, Server, Port, NickName, UserName, RealName, Channel ) -> gen_pnet:start_link_result()
+-spec start_link( ServerName, ConnInfo, Channel, UsrMod, UsrArg ) -> gen_pnet:start_link_result()
 when ServerName :: gen_pnet:server_name(),
-     Server     :: string(),
-     Port       :: pos_integer(),
-     NickName   :: string(),
-     UserName   :: string(),
-     RealName   :: string(),
-     Channel    :: string().
+     ConnInfo   :: #conn_info{},
+     Channel    :: string(),
+     UsrMod     :: atom(),
+     UsrArg     :: _.
 
-start_link( ServerName, Server, Port, NickName, UserName, RealName, Channel ) ->
-  gen_pnet:start_link( ServerName, ?MODULE, {Server, Port, NickName, UserName, RealName, Channel}, [] ).
+start_link( ServerName, ConnInfo, Channel, UsrMod, UsrArg ) ->
+  gen_pnet:start_link( ServerName, ?MODULE, {ConnInfo, Channel, UsrMod, UsrArg}, [] ).
 
 
 %%====================================================================
@@ -83,6 +92,9 @@ handle_call( _Request, _From, _NetState ) -> {reply, {error, bad_msg}}.
               noreply
             | {noreply, #{ atom() => [_] }, #{ atom() => [_] }}
             | {stop, _}.
+
+handle_cast( T = {privmsg, _, _}, _NetState ) ->
+  {noreply, #{}, #{ 'Outbox' => [T] }};
 
 handle_cast( _Request, _NetState ) -> noreply.
 
@@ -111,18 +123,30 @@ handle_info( _Request, _NetState ) -> noreply.
 
 -spec init( Args :: _ ) -> {ok, _}.
 
-init( {Server, Port, NickName, UserName, RealName, Channel} ) ->
+init( {ConnInfo, Channel, UsrMod, UsrArg} )
+when is_list( Channel ),
+     is_atom( UsrMod ) ->
+
+  #conn_info{ server    = Server,
+              port      = Port,
+              nick_name = NickName,
+              user_name = UserName,
+              real_name = RealName } = ConnInfo,
 
   % create socket
   {ok, Socket} = gen_tcp:connect( Server, Port, [list, {active, true}] ),
 
-  error_logger:info_report( [{status, create_socket}, {server, Server}, {port, Port}] ),
+  error_logger:info_report( [{status, create_socket},
+                             {server, Server},
+                             {port, Port}] ),
 
-  #irc_state{ socket    = Socket,
-              nick_name = NickName,
-              user_name = UserName,
-              real_name = RealName,
-              channel   = Channel }.
+  #irc_state{ socket     = Socket,
+              nick_name  = NickName,
+              user_name  = UserName,
+              real_name  = RealName,
+              channel    = Channel,
+              usr_mod    = UsrMod,
+              usr_arg    = UsrArg }.
 
 
 -spec terminate( Reason :: _, NetState :: _ ) -> ok.
@@ -166,7 +190,18 @@ trigger( 'Outbox', join, NetState ) ->
 
   drop;
 
+trigger( 'Outbox', {privmsg, Receiver, Content}, NetState ) ->
 
+  #irc_state{ socket  = Socket } = gen_pnet:get_usr_info( NetState ),
+
+  S = io_lib:format( "PRIVMSG ~s :~s\r\n", [Receiver, Content] ),
+
+  ok = gen_tcp:send( Socket, S ),
+
+  error_logger:info_report( [{status, send_privmsg},
+                             {content, Content}] ),
+
+  drop;
 
 trigger( _Place, _Token, _NetState ) -> pass.
 
@@ -177,28 +212,36 @@ trigger( _Place, _Token, _NetState ) -> pass.
 
 -spec place_lst() -> [atom()].
 
-place_lst() -> ['Data', 'Inbox', 'Outbox', 'State'].
+place_lst() -> ['Data', 'Inbox', 'Outbox', 'ConnState', 'UsrState'].
 
 
 -spec trsn_lst() -> [atom()].
 
 trsn_lst() -> [recv, drop_msg,
-               request_connect, ack_connect, request_join, ack_join].
+               request_connect, ack_connect, request_join, ack_join,
+               privmsg, namereply, join, part].
 
 
 -spec init_marking( Place :: atom(), UsrInfo :: _ ) -> [_].
 
-init_marking( 'Data', _ )        -> [""];
-init_marking( 'State', _ )       -> [connect];
-init_marking( _Place, _UsrInfo ) -> [].
+init_marking( 'Data',      _ )        -> [""];
+init_marking( 'ConnState', _ )        -> [connect];
+init_marking( 'UsrState', #irc_state{ usr_mod = UsrMod, usr_arg = UsrArg } ) -> [UsrMod:init( UsrArg )];
+init_marking( _Place,      _UsrInfo ) -> [].
 
 
 -spec preset( Trsn :: atom() ) -> [atom()].
 
 preset( recv )            -> ['Data'];
 preset( drop_msg )        -> ['Inbox'];
-preset( request_connect ) -> ['State']; preset( ack_connect ) -> ['State', 'Inbox'];
-preset( request_join )    -> ['State']; preset( ack_join )    -> ['State', 'Inbox'].
+preset( request_connect ) -> ['ConnState'];
+preset( ack_connect )     -> ['ConnState', 'Inbox'];
+preset( request_join )    -> ['ConnState'];
+preset( ack_join )        -> ['ConnState', 'Inbox'];
+preset( privmsg )         -> ['ConnState', 'Inbox', 'UsrState'];
+preset( namereply )       -> ['ConnState', 'Inbox', 'UsrState'];
+preset( join )            -> ['ConnState', 'Inbox', 'UsrState'];
+preset( part )            -> ['ConnState', 'Inbox', 'UsrState'].
 
 
 -spec is_enabled( Trsn :: atom(), Mode :: #{ atom() => [_]}, UsrInfo :: _ ) ->
@@ -210,50 +253,82 @@ is_enabled( recv, #{ 'Data' := [S] }, _ ) ->
     _       -> true
   end;
 
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "001" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "002" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "003" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "004" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "005" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "250" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "251" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "252" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "253" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "254" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "255" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "265" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "266" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "332" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "333" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "353" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "366" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "372" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "375" }] }, _ )    -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "MODE" }] }, _ )   -> true;
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ command = "NOTICE" }] }, _ ) -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "001" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "002" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "003" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "004" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "005" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "250" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "251" }] }, _ )    -> true; % RPL_LUSERCLIENT
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "252" }] }, _ )    -> true; % RPL_LUSEROP
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "253" }] }, _ )    -> true; % RPL_LUSERUNKNOWN
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "254" }] }, _ )    -> true; % RPL_LUSERCHANNELS
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "255" }] }, _ )    -> true; % RPL_LUSERME
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "265" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "266" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "328" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "332" }] }, _ )    -> true; % RPL_TOPIC
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "333" }] }, _ )    -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "366" }] }, _ )    -> true; % RPL_ENDOFNAMES
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "372" }] }, _ )    -> true; % RPL_MOTD
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "375" }] }, _ )    -> true; % RPL_MOTDSTART
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "MODE" }] }, _ )   -> true;
+is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "NOTICE" }] }, _ ) -> true;
 
-is_enabled( drop_msg, #{ 'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] },
+is_enabled( request_connect, #{ 'ConnState' := [connect] }, _ ) ->
+  true;
+
+is_enabled( ack_connect, #{ 'ConnState' := [await_connect],
+                            'Inbox' := [#irc_msg{ command = "376" }] }, _ ) ->
+  true;
+
+is_enabled( ack_connect, #{ 'ConnState' := [await_connect],
+                            'Inbox' := [#irc_msg{ command = "422" }] }, _ ) ->
+  true;
+
+is_enabled( request_join, #{ 'ConnState' := [join] }, _ ) ->
+  true;
+
+is_enabled( ack_join, #{ 'ConnState' := [await_join],
+                         'Inbox' := [#irc_msg{ prefix = Prefix, command = "JOIN" }] },
                       #irc_state{ nick_name = NickName } ) ->
-  not lists:prefix( NickName, Prefix );
+  lists:prefix( NickName, get_nick_name( Prefix ) );
 
-is_enabled( request_connect, #{ 'State' := [connect] }, _ ) ->
+is_enabled( privmsg, #{ 'ConnState' := [ready],
+                        'Inbox'     := [#irc_msg{ command = "PRIVMSG" }],
+                        'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command = "376" }] }, _ ) ->
+is_enabled( namereply, #{ 'ConnState' := [ready],
+                            'Inbox'     := [#irc_msg{ command = "353" }],
+                            'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( ack_connect, #{ 'State' := [await_connect],
-                            'Inbox' := [#msg{ command = "422" }] }, _ ) ->
+is_enabled( join, #{ 'ConnState' := [ready],
+                     'Inbox'     := [#irc_msg{ prefix = Prefix, command = "JOIN" }],
+                     'UsrState'  := [_] },
+                  #irc_state{ nick_name = NickName } ) ->
+  not lists:prefix( NickName, get_nick_name( Prefix ) );
+
+is_enabled( part, #{ 'ConnState' := [ready],
+                     'Inbox'     := [#irc_msg{ command = "PART" }],
+                     'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( request_join, #{ 'State' := [join] }, _ ) ->
+is_enabled( part, #{ 'ConnState' := [ready],
+                     'Inbox'     := [#irc_msg{ command = "QUIT" }],
+                     'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( ack_join, #{ 'State' := [await_join],
-                         'Inbox' := [#msg{ prefix = Prefix, command = "JOIN" }] },
-                      #irc_state{ nick_name = NickName } ) ->
-  lists:prefix( NickName, Prefix );
+is_enabled( part, #{ 'ConnState' := [ready],
+                     'Inbox'     := [#irc_msg{ command = "KICK" }],
+                     'UsrState'  := [_] }, _ ) ->
+  true;
+
+is_enabled( part, #{ 'ConnState' := [ready],
+                     'Inbox'     := [#irc_msg{ command = "KILL" }],
+                     'UsrState'  := [_] }, _ ) ->
+  true;
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
 
@@ -263,23 +338,175 @@ is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
 
 fire( recv, #{ 'Data' := [S] }, _ ) ->
   [Prefix, Suffix] = string:split( S, "\r\n" ),
-  Msg = gen_ircclient_parse:parse_msg( Prefix ),
+  Msg = parse_msg( Prefix ),
   {produce, #{ 'Data' => [Suffix], 'Inbox' => [Msg] }};
 
-fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
-  io:format( "~p~n", [Msg] ),
+% fire( drop_msg, #{ 'Inbox' := [Msg] }, _ ) ->
+%   io:format( "~p~n", [Msg] ),
+%   {produce, #{}};
+
+fire( drop_msg, _, _ ) ->
   {produce, #{}};
 
 fire( request_connect, _, _ ) ->
-  {produce, #{ 'State' => [await_connect], 'Outbox' => [connect] }};
+  {produce, #{ 'ConnState' => [await_connect], 'Outbox' => [connect] }};
 
 fire( ack_connect, _, _ ) ->
   error_logger:info_report( [{status, ack_connect}] ),
-  {produce, #{ 'State' => [join] }};
+  {produce, #{ 'ConnState' => [join] }};
 
 fire( request_join, _, _ ) ->
-  {produce, #{ 'State' => [await_join], 'Outbox' => [join] }};
+  {produce, #{ 'ConnState' => [await_join], 'Outbox' => [join] }};
 
 fire( ack_join, _, _ ) ->
   error_logger:info_report( [{status, ack_join}] ),
-  {produce, #{ 'State' => [ready] }}.
+  {produce, #{ 'ConnState' => [ready] }};
+
+fire( privmsg, #{ 'ConnState' := [ready],
+                  'Inbox'     := [Msg],
+                  'UsrState'  := [UsrState] },
+               #irc_state{ channel   = Channel,
+                           nick_name = NickName,
+                           usr_mod   = UsrMod } ) ->
+
+  #irc_msg{ prefix  = Prefix,
+            arg_lst = [Receiver, Content] } = Msg,
+
+  Mode =
+    case Receiver of
+      NickName -> private;
+      Channel  -> public
+    end,
+
+  Sender = get_nick_name( Prefix ),
+
+  Target =
+    case Mode of
+      private -> Sender;
+      public  -> Channel
+    end,
+
+  case UsrMod:handle_privmsg( Mode, Sender, Content, UsrState ) of
+
+    {noreply, UsrState1} ->
+
+      error_logger:info_report( [{status, recv_privmsg},
+                                 {sender, Sender},
+                                 {content, Content},
+                                 {react, noreply}] ),
+
+      {produce, #{ 'ConnState' => [ready],
+                   'UsrState'  => [UsrState1] }};
+
+    {reply, Reply, UsrState1} ->
+
+      error_logger:info_report( [{status, recv_privmsg},
+                                 {sender, Sender},
+                                 {content, Content},
+                                 {react, reply}] ),
+
+      {produce, #{ 'ConnState' => [ready],
+                   'UsrState'  => [UsrState1],
+                   'Outbox'    => [{privmsg, Target, Reply}] }};
+
+    {spawn, F, UsrState1} ->
+
+      Self = self(),
+
+      G =
+        fun() ->
+          Reply = F(),
+          gen_pnet:cast( Self, {privmsg, Target, Reply} )
+        end,
+
+      _Pid = spawn_link( G ),
+
+      {produce, #{ 'ConnState' => [ready],
+                   'UsrState'  => [UsrState1] }}
+
+  end;
+
+fire( namereply, #{ 'ConnState' := [ready],
+                    'Inbox'     := [#irc_msg{ arg_lst = [_, _, _, S] }],
+                    'UsrState'  := [UsrState] },
+                 #irc_state{ usr_mod   = UsrMod } ) ->
+
+  F =
+    fun
+      ( [$@|Z] ) -> Z;
+      ( [$+|Z] ) -> Z;
+      ( Z )      -> Z
+    end,
+
+  UsrLst = [F( X ) || X <- string:split( S, " ", all )],
+
+  error_logger:info_report( [{status, join},
+                             {user_lst, UsrLst} ] ),
+
+  UsrState1 = lists:foldl( fun( U, State ) -> UsrMod:handle_join( U, State ) end,
+                           UsrState, UsrLst ),
+
+  {produce, #{ 'ConnState' => [ready],
+               'UsrState'  => [UsrState1] }};
+
+fire( join, #{ 'ConnState' := [ready],
+               'Inbox'     := [#irc_msg{ prefix = Prefix }],
+               'UsrState'  := [UsrState] },
+            #irc_state{ usr_mod   = UsrMod } ) ->
+
+  U = get_nick_name( Prefix ),
+
+  error_logger:info_report( [{status, join},
+                             {user_lst, [U]} ] ),
+
+  UsrState1 = UsrMod:handle_join( U, UsrState ),
+
+  {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }};
+
+fire( part, #{ 'ConnState' := [ready],
+               'Inbox'     := [#irc_msg{ prefix = Prefix }],
+               'UsrState'  := [UsrState] },
+            #irc_state{ usr_mod   = UsrMod } ) ->
+
+  U = get_nick_name( Prefix ),
+
+  error_logger:info_report( [{status, part},
+                             {user_lst, [U]} ] ),
+
+  UsrState1 = UsrMod:handle_part( U, UsrState ),
+
+  {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }}.
+
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+parse_msg( S ) ->
+  parse_msg( prefix, S, #irc_msg{} ).
+
+parse_msg( prefix, [$:|S], Msg ) ->
+  [Prefix, Rest] = string:split( S, " " ),
+  parse_msg( command, Rest, Msg#irc_msg{ prefix = Prefix } );
+
+parse_msg( prefix, S, Msg ) ->
+  parse_msg( command, S, Msg );
+
+parse_msg( command, S, Msg ) ->
+  [Command, Rest] = string:split( S, " " ),
+  parse_msg( arg_lst, Rest, Msg#irc_msg{ command = Command } );
+
+parse_msg( arg_lst, [$:|S], Msg = #irc_msg{ arg_lst = ArgLst } ) ->
+  Msg#irc_msg{ arg_lst = ArgLst++[S] };
+
+parse_msg( arg_lst, S, Msg = #irc_msg{ arg_lst = ArgLst } ) ->
+  case string:split( S, " " ) of
+    [LastArg]   -> Msg#irc_msg{ arg_lst = ArgLst++[LastArg] };
+    [Arg, Rest] -> parse_msg( arg_lst, Rest, Msg#irc_msg{ arg_lst = ArgLst++[Arg]} )
+  end.
+
+get_nick_name( Prefix ) ->
+  [Prefix1|_] = string:split( Prefix, "@" ),
+  [Prefix2|_] = string:split( Prefix1, "!" ),
+  Prefix2.
