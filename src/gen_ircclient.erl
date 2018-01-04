@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 %% @author Jörgen Brandt <joergen.brandt@onlinehome.de>
-%% @version 0.1.0
+%% @version 0.1.1
 %% @copyright 2018 Jörgen Brandt
 %%
 %% @end
@@ -427,9 +427,11 @@ fire( privmsg, #{ 'ConnState' := [ready],
                                  {content, Content},
                                  {react, reply}] ),
 
+      OutboxLst = [{privmsg, Target, S} || S <- string:tokens( Reply, "\n" )],
+
       {produce, #{ 'ConnState' => [ready],
                    'UsrState'  => [UsrState1],
-                   'Outbox'    => [{privmsg, Target, Reply}] }};
+                   'Outbox'    => OutboxLst }};
 
     {spawn, F, UsrState1} ->
 
@@ -438,7 +440,9 @@ fire( privmsg, #{ 'ConnState' := [ready],
       G =
         fun() ->
           Reply = F(),
-          gen_pnet:cast( Self, {privmsg, Target, Reply} )
+          lists:foreach(
+            fun gen_pnet:cast( Self, {privmsg, Target, Reply} ) end,
+            string:tokens( Reply, "\n" ) )
         end,
 
       _Pid = spawn_link( G ),
