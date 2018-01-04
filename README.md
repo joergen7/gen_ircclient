@@ -78,7 +78,7 @@ RealName = "Adam Canopy".
 ```erlang
 ConnInfo = {conn_info, Server, Port, NickName, UserName, RealName},
 Channel = "#botwar",
-UsrMod  = abot.
+UsrMod  = example_bot.
 ```
 
 ```erlang
