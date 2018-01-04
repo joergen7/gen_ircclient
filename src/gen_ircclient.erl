@@ -441,7 +441,7 @@ fire( privmsg, #{ 'ConnState' := [ready],
         fun() ->
           Reply = F(),
           lists:foreach(
-            fun gen_pnet:cast( Self, {privmsg, Target, Reply} ) end,
+            fun( S ) -> gen_pnet:cast( Self, {privmsg, Target, S} ) end,
             string:tokens( Reply, "\n" ) )
         end,
 
