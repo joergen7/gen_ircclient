@@ -1,3 +1,29 @@
+%% -*- erlang -*-
+%%
+%% A scaffold for Erlang IRC bots.
+%%
+%% Copyright 2018 Jörgen Brandt
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%
+%% -------------------------------------------------------------------
+%% @author Jörgen Brandt <joergen.brandt@onlinehome.de>
+%% @version 0.1.0
+%% @copyright 2018 Jörgen Brandt
+%%
+%% @end
+%% -------------------------------------------------------------------
+
 -module( gen_ircclient ).
 -behaviour( gen_pnet ).
 
@@ -14,7 +40,7 @@
           fire/3] ).
 
 %%====================================================================
-%% Exports
+%% Includes
 %%====================================================================
 
 -include( "gen_ircclient.hrl" ).
@@ -26,8 +52,8 @@
 -callback init( Arg :: _ ) -> State :: _.
 
 -callback handle_privmsg( Mode :: private | public, Sender :: string(), Content :: string(), State :: _ ) ->
-              {noreply, NewState :: _}                    % keep qiet
-            | {reply, Reply :: string(), NewState :: _}   % immediately reply with Reply
+              {noreply, NewState :: _}                            % keep qiet
+            | {reply, Reply :: string(), NewState :: _}           % immediately reply with Reply
             | {spawn, F :: fun( () -> string() ), NewState :: _}. % spawn long-running process F which returns the reply string
 
 -callback handle_join( User :: string(), State :: _ ) -> _.

@@ -1,5 +1,5 @@
 {application, gen_ircclient,
- [{description, "An OTP library"},
+ [{description, "A scaffold for Erlang IRC bots."},
   {vsn, "0.1.0"},
   {registered, []},
   {applications,
@@ -9,7 +9,9 @@
   {env,[]},
   {modules, []},
 
-  {maintainers, []},
+  {maintainers, ["Jorgen Brandt"]},
   {licenses, ["Apache 2.0"]},
-  {links, []}
+  {links, [
+           {"GitHub", "https://github.com/joergen7/gen_ircclient/"}
+          ]}
  ]}.

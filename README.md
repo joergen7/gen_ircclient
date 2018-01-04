@@ -5,9 +5,20 @@
 
 ## IRC Client Behaviour
 
+To implement an IRC bot with `gen_ircclient` the following four callback functions need to be implemented:
+
+- `init/1` initializes the bot's state
+- `handle_privmsg/4` defines the reaction to a given message.
+- `handle_join/2` defines the reaction to the joining of a new user.
+- `handle_part/2` handles the leaving of a user.
+
+### init
+
 ```erlang
 -callback init( Arg :: _ ) -> State :: _.
 ```
+
+### handle_privmsg
 
 ```erlang
 -callback handle_privmsg( Mode :: private | public, Sender :: string(), Content :: string(), State :: _ ) ->
@@ -16,9 +27,13 @@
             | {spawn, F :: fun( () -> string() ), NewState :: _}.
 ```
 
+### handle_join
+
 ```erlang
 -callback handle_join( User :: string(), State :: _ ) -> _.
 ```
+
+### handle_part
 
 ```erlang
 -callback handle_part( User :: string(), State :: _ ) -> _.
