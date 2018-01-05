@@ -370,12 +370,12 @@ is_enabled( error, #{ 'ConnState' := [ready],
     _        -> false
   end;
 
-is_enabled( error, #{ 'ConnState' := [ready],
+is_enabled( error, #{ 'ConnState' := [_],
                       'Inbox'     := [#irc_msg{ command = [$4, _, _] }],
                       'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( error, #{ 'ConnState' := [ready],
+is_enabled( error, #{ 'ConnState' := [_],
                       'Inbox'     := [#irc_msg{ command = [$5, _, _] }],
                       'UsrState'  := [_] }, _ ) ->
   true;
