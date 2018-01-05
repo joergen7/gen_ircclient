@@ -245,7 +245,7 @@ place_lst() -> ['Data', 'Inbox', 'Outbox', 'ConnState', 'UsrState'].
 
 trsn_lst() -> [recv, drop_msg,
                request_connect, ack_connect, request_join, ack_join,
-               privmsg, namereply, join, part, kick].
+               privmsg, namereply, join, part, error].
 
 
 -spec init_marking( Place :: atom(), UsrInfo :: _ ) -> [_].
@@ -347,9 +347,36 @@ is_enabled( part, #{ 'ConnState' := [ready],
                      'UsrState'  := [_] }, _ ) ->
   true;
 
-is_enabled( kick, #{ 'ConnState' := [ready],
-                     'Inbox'     := [#irc_msg{ command = "KICK" }],
-                     'UsrState'  := [_] }, _ ) ->
+is_enabled( part, #{ 'ConnState' := [ready],
+                      'Inbox'     := [#irc_msg{ command = "KICK",
+                                                arg_lst = [_, U |_] }],
+                      'UsrState'  := [_] },
+                  #irc_state{ nick_name = NickName } ) ->
+
+  case U of
+    NickName -> false;
+    _        -> true
+  end;
+
+is_enabled( error, #{ 'ConnState' := [ready],
+                      'Inbox'     := [#irc_msg{ command = "KICK",
+                                                arg_lst = [_, U |_] }],
+                      'UsrState'  := [_] },
+                   #irc_state{ nick_name = NickName } ) ->
+
+  case U of
+    NickName -> true;
+    _        -> false
+  end;
+
+is_enabled( error, #{ 'ConnState' := [ready],
+                      'Inbox'     := [#irc_msg{ command = [$4, _, _] }],
+                      'UsrState'  := [_] }, _ ) ->
+  true;
+
+is_enabled( error, #{ 'ConnState' := [ready],
+                      'Inbox'     := [#irc_msg{ command = [$5, _, _] }],
+                      'UsrState'  := [_] }, _ ) ->
   true;
 
 is_enabled( _Trsn, _Mode, _UsrInfo ) -> false.
@@ -497,6 +524,21 @@ fire( join, #{ 'ConnState' := [ready],
 
   {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }};
 
+
+fire( part, #{ 'ConnState' := [ready],
+               'Inbox'     := [#irc_msg{ command = "KICK",
+                                         arg_lst = [_, U |_] }],
+               'UsrState'  := [UsrState] },
+            #irc_state{ usr_mod   = UsrMod } ) ->
+
+  error_logger:info_report( [{status, part},
+                             {user_lst, [U]} ] ),
+
+  UsrState1 = UsrMod:handle_part( U, UsrState ),
+
+  {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }};
+
+
 fire( part, #{ 'ConnState' := [ready],
                'Inbox'     := [Msg],
                'UsrState'  := [UsrState] },
@@ -513,27 +555,21 @@ fire( part, #{ 'ConnState' := [ready],
 
   {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }};
 
-fire( kick, #{ 'ConnState' := [ready],
-               'Inbox'     := [Msg],
-               'UsrState'  := [UsrState] },
-            #irc_state{ usr_mod   = UsrMod,
-                        nick_name = NickName } ) ->
+fire( error, #{ 'ConnState' := [ready],
+                'Inbox'     := [Msg],
+                'UsrState'  := [_] }, _ ) ->
+  
+  #irc_msg{ prefix  = Prefix,
+            command = Command,
+            arg_lst = ArgLst } = Msg,
 
-  #irc_msg{ arg_lst = ArgLst } = Msg,
+  error_logger:info_report( [{status, error},
+                             {prefix, Prefix},
+                             {command, Command},
+                             {arg_lst, ArgLst} ] ),
 
-  [_, U |_] = ArgLst,
+  error( Msg ).
 
-  case U of
-    NickName -> error( kicked );
-    _        -> ok
-  end,
-
-  error_logger:info_report( [{status, part},
-                             {user_lst, [U]} ] ),
-
-  UsrState1 = UsrMod:handle_part( U, UsrState ),
-
-  {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }}.
 
 
 
