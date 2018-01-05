@@ -556,7 +556,7 @@ fire( part, #{ 'ConnState' := [ready],
 
   {produce, #{ 'ConnState' => [ready], 'UsrState' => [UsrState1] }};
 
-fire( error, #{ 'ConnState' := [ready],
+fire( error, #{ 'ConnState' := [_],
                 'Inbox'     := [Msg],
                 'UsrState'  := [_] }, _ ) ->
   
