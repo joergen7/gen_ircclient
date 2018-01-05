@@ -268,7 +268,8 @@ preset( privmsg )         -> ['ConnState', 'Inbox', 'UsrState'];
 preset( namereply )       -> ['ConnState', 'Inbox', 'UsrState'];
 preset( join )            -> ['ConnState', 'Inbox', 'UsrState'];
 preset( part )            -> ['ConnState', 'Inbox', 'UsrState'];
-preset( kick )            -> ['ConnState', 'Inbox', 'UsrState'].
+preset( kick )            -> ['ConnState', 'Inbox', 'UsrState'];
+preset( error )            -> ['ConnState', 'Inbox', 'UsrState'].
 
 
 -spec is_enabled( Trsn :: atom(), Mode :: #{ atom() => [_]}, UsrInfo :: _ ) ->
