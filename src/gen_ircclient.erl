@@ -280,9 +280,13 @@ preset( error )            -> ['ConnState', 'Inbox', 'UsrState'].
         boolean().
 
 is_enabled( recv, #{ 'Data' := [S] }, _ ) ->
-  case string:find( S, "\r\n" ) of
-    nomatch -> false;
-    _       -> true
+  % case string:find( S, "\r\n" ) of
+  %   nomatch -> false;
+  %   _       -> true
+  % end;
+  case string:str( S, "\r\n" ) of
+    0 -> false;
+    _ -> true
   end;
 
 is_enabled( drop_msg, #{ 'Inbox' := [#irc_msg{ command = "001" }] }, _ )    -> true;
