@@ -160,8 +160,12 @@ when is_list( Channel ),
               real_name = RealName } = ConnInfo,
 
   % create socket
-  {ok, Socket} = gen_tcp:connect( Server, Port, [list, {active, true}] ),
-
+  Socket =
+    case gen_tcp:connect( Server, Port, [list, {active, true}] ) of
+      {ok, S}         -> S;
+      {error, Reason} -> error( Reason )
+    end,
+    
   error_logger:info_report( [{status, create_socket},
                              {server, Server},
                              {port, Port}] ),
