@@ -1,4 +1,4 @@
--module( cuneiform_irc_test ).
+-module( gen_ircclient_test ).
 
 -include_lib( "eunit/include/eunit.hrl" ).
 
