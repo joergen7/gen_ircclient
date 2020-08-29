@@ -25,7 +25,7 @@
 %% -------------------------------------------------------------------
 
 -module( gen_ircclient ).
--behaviour( gen_pnet ).
+-behaviour( gen_server ).
 
 %%====================================================================
 %% Exports
@@ -33,11 +33,12 @@
 
 -export( [start_link/4, start_link/5, get_nick_name/1] ).
 
--export( [code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
+-export( [code_change/3,
+
+
+ handle_call/3, handle_cast/2, handle_info/2, init/1,
           terminate/2, trigger/3] ).
 
--export( [place_lst/0, trsn_lst/0, init_marking/2, preset/1, is_enabled/3,
-          fire/3] ).
 
 %%====================================================================
 %% Includes
@@ -48,6 +49,35 @@
 %%====================================================================
 %% Callback definitions
 %%====================================================================
+
+-callback code_change( OldVsn :: _, State :: _, Extra :: _ ) ->
+            {ok, NewState :: _} | {error, Reason :: _}.
+
+-callback handle_call( Request :: _, From :: {pid(), _}, State :: _ ) ->
+              {reply, Reply :: _, NewState :: _}
+            | {reply, Reply :: _, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {reply, Reply :: _, NewState :: _, hibernate}
+            | {reply, Reply :: _, NewState :: _, {continue, Continue :: _}}
+            | {noreply, NewState :: _}
+            | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {noreply, NewState :: _, hibernate}
+            | {noreply, NewState :: _, {continue, Continue :: _}}
+            | {stop, Reason :: _, Reply :: _, NewState :: _}
+            | {stop, Reason :: _, NewState :: _}.
+
+-callback handle_cast( Request :: _, State :: _ ) ->
+              {noreply, NewState :: _}
+            | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {noreply, NewState :: _, hibernate}
+            | {noreply, NewState :: _, {continue, Continue :: _}}
+            | {stop, Reason :: _, NewState}.
+
+-callback handle_info( Info :: _, State :: _ ) ->
+              {noreply, NewState :: _}
+            | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {noreply, NewState :: _, hibernate}
+            | {noreply, NewState :: _, {continue, Continue :: _}}
+            | {stop, Reason :: _, NewState :: _}.
 
 -callback init( Arg :: _ ) -> State :: _.
 
@@ -65,84 +95,114 @@
 %%====================================================================
 
 -record( irc_state, {socket, nick_name, user_name, real_name, channel,
-                     usr_mod, usr_arg} ).
+                     usr_mod, usr_data,
+                     recv_buf} ).
 
 %%====================================================================
 %% API functions
 %%====================================================================
 
 
--spec start_link( ConnInfo, Channel, UsrMod, UsrArg ) ->
-        gen_pnet:start_link_result()
+-spec start_link( ConnInfo, Channel, UsrMod, UsrArg, Options ) ->
+        {ok, pid()} | ignore | {error, _}
 when ConnInfo :: #conn_info{},
      Channel  :: string(),
      UsrMod   :: atom(),
-     UsrArg   :: _.
+     UsrArg   :: _,
+     Options  :: [_].
 
-start_link( ConnInfo, Channel, UsrMod, UsrArg ) ->
-  gen_pnet:start_link( ?MODULE, {ConnInfo, Channel, UsrMod, UsrArg}, [] ).
+start_link( ConnInfo, Channel, UsrMod, UsrArgs, Options ) ->
+  gen_server:start_link( ?MODULE, {ConnInfo, Channel, UsrMod, UsrArg}, Options ).
 
 
--spec start_link( ServerName, ConnInfo, Channel, UsrMod, UsrArg ) -> gen_pnet:start_link_result()
-when ServerName :: gen_pnet:server_name(),
+-spec start_link( ServerName, ConnInfo, Channel, UsrMod, UsrData, Options ) ->
+       {ok, pid()} | ignore | {error, _}
+when ServerName :: {local, atom()} | {global, _} | {via, atom(), _},
      ConnInfo   :: #conn_info{},
      Channel    :: string(),
      UsrMod     :: atom(),
-     UsrArg     :: _.
+     UsrData    :: _,
+     Options    :: [_].
 
-start_link( ServerName, ConnInfo, Channel, UsrMod, UsrArg ) ->
-  gen_pnet:start_link( ServerName, ?MODULE, {ConnInfo, Channel, UsrMod, UsrArg}, [] ).
+start_link( ServerName, ConnInfo, Channel, UsrMod, UsrData, Options ) ->
+  gen_server:start_link( ServerName, ?MODULE, {ConnInfo, Channel, UsrMod, UsrData}, Options ).
 
 
 %%====================================================================
 %% Interface callback functions
 %%====================================================================
 
--spec code_change( OldVsn :: _, NetState :: _, Extra :: _ ) ->
+-spec code_change( OldVsn :: _, IrcState :: #ircstate{}, Extra :: _ ) ->
         {ok, _} | {error, _}.
 
-code_change( _OldVsn, NetState, _Extra ) -> {ok, NetState}.
+code_change( OldVsn, IrcState = #irc_state{ usr_mod = UsrMod, usr_data = UsrData }, Extra ) ->
+  case UsrMod:code_change( OldVsn, UsrData, Extra ) of
+    {ok, NewUsrData} -> {ok, IrcState#irc_state{ usr_data = NewUsrData }};
+    {error, Reason}  -> {error, Reason}
+  end.
 
 
--spec handle_call( Request :: _, From :: {pid(), _}, NetState :: _ ) ->
-              {reply, _}
-            | {reply, _, #{ atom() => [_] }, #{ atom() => [_] }}
-            | noreply
-            | {noreply, #{ atom() => [_] }, #{ atom() => [_] }}
-            | {stop, _, _}.
+-spec handle_call( Request :: _, From :: {pid(), _}, IrcState :: #irc_state{} ) ->
+              {reply, Reply :: _, NewState :: _}
+            | {reply, Reply :: _, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {reply, Reply :: _, NewState :: _, hibernate}
+            | {reply, Reply :: _, NewState :: _, {continue, Continue :: _}}
+            | {noreply, NewState :: _}
+            | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+            | {noreply, NewState :: _, hibernate}
+            | {noreply, NewState :: _, {continue, Continue :: _}}
+            | {stop, Reason :: _, Reply :: _, NewState :: _}
+            | {stop, Reason :: _, NewState :: _}.
 
-handle_call( _Request, _From, _NetState ) -> {reply, {error, bad_msg}}.
+handle_call( Request, From, IrcState = #irc_state{ usr_mod = UsrMod, usr_data = UsrData } ) ->
+  case UsrMod:handle_call( Request, From, UsrData ) of
+    {reply, Reply, NewState}        -> {reply, Reply, IrcState#irc_state{ usr_data = NewState }};
+    {reply, Reply, NewState, X}     -> {reply, Reply, IrcState#irc_state{ usr_data = NewState }, X};
+    {noreply, NewState}             -> {noreply, IrcState#irc_state{ usr_data = NewState }};
+    {noreply, NewState, X}          -> {noreply, IrcState#irc_state{ usr_data = NewState }, X};
+    {stop, Reason, Reply, NewState} -> {stop, Reason, Reply, IrcState#irc_state{ usr_data = NewState }};
+    {stop, Reason, NewState}        -> {stop, Reason, IrcState#irc_state{ usr_data = NewState }}
+  end.
 
 
--spec handle_cast( Request :: _, NetState :: _ ) ->
-              noreply
-            | {noreply, #{ atom() => [_] }, #{ atom() => [_] }}
-            | {stop, _}.
 
-handle_cast( T = {privmsg, _, _}, _NetState ) ->
-  {noreply, #{}, #{ 'Outbox' => [T] }};
+-spec handle_cast( Request :: _, IrcState :: _ ) ->
+          {noreply, NewState :: _}
+        | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+        | {noreply, NewState :: _, hibernate}
+        | {noreply, NewState :: _, {continue, Continue :: _}}
+        | {stop, Reason :: _, NewState}.
 
-handle_cast( _Request, _NetState ) -> noreply.
+handle_cast( T = {privmsg, Receiver, Content}, IrcState ) ->
+  send_privmsg( Receiver, Content, IrcState ),
+  {noreply, IrcState};
+
+handle_cast( Request, IrcState = #irc_state{ usr_mod = UsrMod, usr_data = UsrData } ) ->
+  case UsrMod:handle_cast( Request, UsrData ) of
+    {noreply, NewState}      -> {noreply, IrcState#irc_state{ usr_data = NewState }};
+    {noreply, NewState, X}   -> {noreply, IrcState#irc_state{ usr_data = NewState }, X};
+    {stop, Reason, NewState} -> {stop, Reason, IrcState#irc_state{ usr_data = NewState }}
+  end.
 
 
--spec handle_info( Info :: _, NetState :: _ ) ->
-              noreply
-            | {noreply, #{ atom() => [_] }, #{ atom() => [_] }}
-            | {stop, _}.
+-spec handle_info( Info :: _, State :: _ ) ->
+          {noreply, NewState :: _}
+        | {noreply, NewState :: _, Timeout :: nonnegative_integer() | infinity}
+        | {noreply, NewState :: _, hibernate}
+        | {noreply, NewState :: _, {continue, Continue :: _}}
+        | {stop, Reason :: _, NewState :: _}.
 
-handle_info( {tcp_closed, Socket}, NetState ) ->
-  #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
-  {stop, tcp_closed};
+handle_info( {tcp_closed, Socket}, IrcState = #irc_state{ socket = Socket } ) ->
+  {stop, tcp_closed, IrcState};
 
-handle_info( {tcp, Socket, [$P, $I, $N, $G|X]}, NetState ) ->
-  #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
+handle_info( {tcp, Socket, [$P, $I, $N, $G|X]}, IrcState = #irc_state{ socket = Socket } ) ->
   ok = gen_tcp:send( Socket, "PONG"++X ),
-  noreply;
+  {noreply, IrcState};
 
-handle_info( {tcp, Socket, Data}, NetState ) ->
-  #irc_state{ socket = Socket } = gen_pnet:get_usr_info( NetState ),
-  [LineAcc] = gen_pnet:get_ls( 'Data', NetState ),
-  {noreply, #{ 'Data' => [LineAcc] }, #{ 'Data' => [LineAcc++Data] }};
+handle_info( {tcp, Socket, Data}, IrcState = #irc_state{ socket = Socket, recv_buf = RecvBuf } ) ->
+  RecvBuf1 = RecvBuf++Data,
+  RecvBuf2 = recv( RecvBuf1 ),
+  {noreply, IrcState#irc_state{ recv_buf = RecvBuf2 }};
 
 handle_info( _Request, _NetState ) -> noreply.
 
@@ -183,57 +243,6 @@ when is_list( Channel ),
 
 terminate( _Reason, _NetState ) -> ok.
 
-
--spec trigger( Place :: atom(), Token :: _, NetState :: _ ) ->
-            pass | drop.
-
-trigger( 'Outbox', connect, NetState ) ->
-
-  #irc_state{ socket    = Socket,
-              nick_name = NickName,
-              user_name = UserName,
-              real_name = RealName } = gen_pnet:get_usr_info( NetState ),
-
-  HostName = "*",
-  ServerName = "8",
-
-  % send registration info
-  ok = gen_tcp:send( Socket,
-                     io_lib:format( "NICK ~s\r\nUSER ~s ~s ~s :~s\r\n",
-                     [NickName, UserName, HostName, ServerName, RealName] ) ),
-
-  error_logger:info_report( [{status, register_user},
-                             {nick_name, NickName},
-                             {user_name, UserName},
-                             {real_name, RealName}] ),
-
-  drop;
-
-trigger( 'Outbox', join, NetState ) ->
-
-  #irc_state{ socket  = Socket,
-              channel = Channel } = gen_pnet:get_usr_info( NetState ),
-
-  ok = gen_tcp:send( Socket, io_lib:format( "JOIN ~s\r\n", [Channel] ) ),
-
-  error_logger:info_report( [{status, join_channel}, {channel, Channel}] ),
-
-  drop;
-
-trigger( 'Outbox', {privmsg, Receiver, Content}, NetState ) ->
-
-  #irc_state{ socket  = Socket } = gen_pnet:get_usr_info( NetState ),
-
-  S = io_lib:format( "PRIVMSG ~s :~s\r\n", [Receiver, Content] ),
-
-  ok = gen_tcp:send( Socket, S ),
-
-  error_logger:info_report( [{status, send_privmsg},
-                             {content, Content}] ),
-
-  drop;
-
-trigger( _Place, _Token, _NetState ) -> pass.
 
 
 %%====================================================================
@@ -583,8 +592,16 @@ fire( error, #{ 'ConnState' := [_],
 %% Internal functions
 %%====================================================================
 
+-spec parse_msg( S :: string() ) -> #irc_msg{}.
+
 parse_msg( S ) ->
   parse_msg( prefix, S, #irc_msg{} ).
+
+
+-spec parse_msg( Type, S, Msg ) -> Msg
+when Type :: prefix | command | arg_lst,
+     S    :: string(),
+     Msg  :: #irc_msg{}.
 
 parse_msg( prefix, [$:|S], Msg ) ->
   [Prefix, Rest] = string:split( S, " " ),
@@ -606,7 +623,77 @@ parse_msg( arg_lst, S, Msg = #irc_msg{ arg_lst = ArgLst } ) ->
     [Arg, Rest] -> parse_msg( arg_lst, Rest, Msg#irc_msg{ arg_lst = ArgLst++[Arg]} )
   end.
 
+
+%% @doc extract the sender's nickname from a message prefix
+%%
+%%      Prefixes have the form `<nickname>!<ident>@<hostname>'. This function
+%%      returns the nickname part.
+%%
+-spec get_nick_name( Prefix :: string() ) -> string().
+
 get_nick_name( Prefix ) ->
   [Prefix1|_] = string:split( Prefix, "@" ),
   [Prefix2|_] = string:split( Prefix1, "!" ),
   Prefix2.
+
+
+%% @doc send a message to a channel or user.
+%%
+%%      If `Receiver' starts with a `#' then the receiver is a channel,
+%%      otherwise it is a user.
+%%
+%% @param Receiver channel or user
+%% @param Content  string holding the message
+%% @param IrcState state object
+%%
+-spec send_privmsg( Receiver, Content, IrcState ) -> ok.
+
+send_privmsg( Receiver, Content, IrcState ) ->
+
+  #irc_state{ socket  = Socket } = IrcState,
+
+  S = io_lib:format( "PRIVMSG ~s :~s\r\n", [Receiver, Content] ),
+
+  ok = gen_tcp:send( Socket, S ),
+
+  ok = error_logger:info_report( [{status, send_privmsg},
+                                  {receiver, Receiver},
+                                  {content, Content}] ),
+
+  ok.
+
+
+-spec register_user( IrcState ) -> ok.
+
+register_user( IrcState ) ->
+
+  #irc_state{ socket    = Socket,
+              nick_name = NickName,
+              user_name = UserName,
+              real_name = RealName } = IrcState,
+
+  HostName = "*",
+  ServerName = "8",
+
+  % send registration info
+  ok = gen_tcp:send( Socket,
+                     io_lib:format( "NICK ~s\r\nUSER ~s ~s ~s :~s\r\n",
+                     [NickName, UserName, HostName, ServerName, RealName] ) ),
+
+  ok = error_logger:info_report( [{status, register_user},
+                                  {nick_name, NickName},
+                                  {user_name, UserName},
+                                  {real_name, RealName}] ),
+
+  ok;
+
+join_channel( IrcState ) ->
+
+  #irc_state{ socket  = Socket,
+              channel = Channel } = IrcState,
+
+  ok = gen_tcp:send( Socket, io_lib:format( "JOIN ~s\r\n", [Channel] ) ),
+
+  ok = error_logger:info_report( [{status, join_channel}, {channel, Channel}] ),
+
+  ok;
