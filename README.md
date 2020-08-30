@@ -90,10 +90,10 @@ gen_ircclient:start_link( ConnInfo, Channel, UsrMod, [] ).
 - [Erlang](http://www.erlang.org/) OTP 20.0 or higher
 - [Rebar3](https://www.rebar3.org/) 3.0.0 or higher
 
-## Authors
-
-- Jörgen Brandt ([@joergen7](https://github.com/joergen7/)) [joergen.brandt@onlinehome.de](mailto:joergen.brandt@onlinehome.de)
-
 ## License
 
 [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0.html)
+
+## Resources
+
+- [Developing Your Own Bot](https://www.wikihow.com/Develop-an-IRC-Bot)

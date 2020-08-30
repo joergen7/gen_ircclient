@@ -2,7 +2,7 @@
 %%
 %% A scaffold for Erlang IRC bots.
 %%
-%% Copyright 2018 Jörgen Brandt
+%% Copyright 2018-2020 Jörgen Brandt
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 %% @author Jörgen Brandt <joergen.brandt@onlinehome.de>
 %% @version 0.1.1
-%% @copyright 2018 Jörgen Brandt
+%% @copyright 2018-2020 Jörgen Brandt
 %%
 %% @end
 %% -------------------------------------------------------------------
@@ -33,11 +33,8 @@
 
 -export( [start_link/4, start_link/5, get_nick_name/1] ).
 
--export( [code_change/3,
-
-
- handle_call/3, handle_cast/2, handle_info/2, init/1,
-          terminate/2, trigger/3] ).
+-export( [code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
+          terminate/2] ).
 
 
 %%====================================================================
@@ -79,16 +76,22 @@
             | {noreply, NewState :: _, {continue, Continue :: _}}
             | {stop, Reason :: _, NewState :: _}.
 
--callback init( Arg :: _ ) -> State :: _.
+-callback init( Arg :: _ ) -> ->
+              {ok, State :: _}
+            | {ok, State :: _, Timeout :: nonnegative_integer() | infinity}
+            | {ok, State :: _, hibernate}
+            | {ok, State :: _, {continue, Continue :: _}}
+            | {stop, Reason :: _}
+            | ignore.
 
--callback handle_privmsg( Mode :: private | public, Sender :: string(), Content :: string(), State :: _ ) ->
+-callback handle_privmsg( Mode :: msg_mode(), Sender :: string(), Content :: string(), State :: _ ) ->
               {noreply, NewState :: _}                            % keep qiet
             | {reply, Reply :: string(), NewState :: _}           % immediately reply with Reply
             | {spawn, F :: fun( () -> string() ), NewState :: _}. % spawn long-running process F which returns the reply string
 
--callback handle_join( User :: string(), State :: _ ) -> _.
+-callback handle_join( User :: string(), State :: _ ) -> NewState :: _.
 
--callback handle_part( User :: string(), State :: _ ) -> _.
+-callback handle_part( User :: string(), State :: _ ) -> NewState :: _.
 
 %%====================================================================
 %% Record definitions
